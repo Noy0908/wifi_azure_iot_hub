@@ -7,7 +7,7 @@ Cellular: Azure IoT Hub
    :local:
    :depth: 2
 
-The Azure IoT Hub sample shows the communication of an nRF9160-based device with an `Azure IoT Hub`_ instance.
+The Azure IoT Hub sample shows the communication of an nRF7002-based device with an `Azure IoT Hub`_ instance.
 This sample uses the :ref:`lib_azure_iot_hub` library to communicate with the IoT hub.
 
 
@@ -54,7 +54,14 @@ Configuration
 Setup
 =====
 
-For the sample to work as intended, you must set up and configure an Azure IoT Hub instance.
+1. For the sample to work as intended, you must set up and configure an Azure IoT Hub instance.
+2. generate your CA and device certificate with openssl or other tools, please refer below docs:
+		https://docs.aws.amazon.com/iot/latest/developerguide/manage-your-CA-certs.html
+3. register your CA and device certificate to your IoT Hub, please refer to azure docs 
+4. copy and paste the Azure root certificate and your device certificate and private key to your ./certs/ directory.
+
+
+
 See :ref:`configure_options_azure_iot` for information on the configuration options that you can use to create an Azure IoT Hub instance.
 Also, for a successful TLS connection to the Azure IoT Hub instance, the device needs to have certificates provisioned.
 See :ref:`prereq_connect_to_azure_iot_hub` for information on provisioning the certificates.
@@ -74,7 +81,7 @@ As an example, the following compiles with DPS for nRF9160DK:
 
 .. code-block:: console
 
-	west build -p -b nrf9160dk_nrf9160_ns -- -DOVERLAY_CONFIG=overlay-dps.conf
+	west build -p -b nrf7002dk_nrf5340_cpuapp
 
 * :kconfig:option:`CONFIG_AZURE_IOT_HUB_DPS` - Enables Azure IoT Hub DPS.
 * :kconfig:option:`CONFIG_AZURE_IOT_HUB_DPS_REG_ID` - Sets the Azure IoT Hub DPS registration ID. It can be provided at run time. By default, the sample uses the device ID as the registration ID and sets it at run time.
@@ -132,31 +139,35 @@ When the sample runs, the device boots, and the sample displays the following ou
 
 .. code-block:: console
 
-	*** Booting Zephyr OS build v2.3.0-rc1-ncs1-1453-gf41496cd30d5  ***
-	<inf> azure_iot_hub_sample: Azure IoT Hub sample started
-	<inf> azure_iot_hub_sample: Connecting to LTE network
-	<inf> azure_iot_hub_sample: Connected to LTE network
-	<inf> azure_iot_hub_sample: AZURE_IOT_HUB_EVT_CONNECTING
-	<inf> azure_iot_hub_sample: AZURE_IOT_HUB_EVT_CONNECTED
-	<inf> azure_iot_hub_sample: AZURE_IOT_HUB_EVT_READY
-	<inf> azure_iot_hub_sample: AZURE_IOT_HUB_EVT_TWIN_RECEIVED
-	<inf> azure_iot_hub_sample: Sending event:
-	<inf> azure_iot_hub_sample: {"temperature":25.9,"timestamp":16849}
-	<inf> azure_iot_hub_sample: Event was successfully sent
-	<inf> azure_iot_hub_sample: Next event will be sent in 60 seconds
+[00:00:00.011,810] <inf> spi_nor: mx25r6435f@0: 8 MiBy flash
+[00:00:00.097,595] <wrn> wifi_nrf: wifi_nrf_if_start_zep: Valid MAC address: F4:CE:36:00:1F:60
 
+[00:00:00.224,914] <inf> fs_nvs: 2 Sectors of 4096 bytes
+[00:00:00.224,914] <inf> fs_nvs: alloc wra: 0, fe8
+[00:00:00.224,914] <inf> fs_nvs: data wra: 0, 0
+*** Booting Zephyr OS build v3.3.99-ncs1-2817-geb2863268008 ***
+[00:00:00.225,158] <inf> azure_iot_hub_sample: Azure IoT Hub sample started
+[00:00:00.225,189] <inf> azure_iot_hub_sample: Device ID: F4CE36001F60
+[00:00:00.225,250] <inf> azure_iot_hub_sample: Bringing network interface up and connecting to the network
+[00:00:01.812,408] <dbg> azure_iot_hub: iot_hub_state_set: State transition: STATE_UNINIT --> STATE_DISCONNECTED
+[00:00:01.812,438] <inf> azure_iot_hub_sample: Azure IoT Hub library initialized
+[00:00:06.518,981] <inf> azure_iot_hub_sample: Network connectivity established
+[00:00:11.519,073] <inf> azure_iot_hub_sample: Connecting to AWS IoT
+[00:00:11.519,195] <dbg> azure_iot_hub: iot_hub_state_set: State transition: STATE_DISCONNECTED --> STATE_CONNECTING
+[00:00:11.519,226] <inf> azure_iot_hub_sample: AZURE_IOT_HUB_EVT_CONNECTING
+[00:00:11.519,317] <dbg> azure_iot_hub: azure_iot_hub_connect: User name: fwotahub.azure-devices.net/F4CE36001F60/?api-version=2020-09-30&DeviceClientType=azsdk-c%2F1.4.0-beta.2
+[00:00:11.519,348] <dbg> azure_iot_hub: azure_iot_hub_connect: User name buffer size is 256, actual user name size is: 103
+[00:00:21.260,070] <inf> azure_iot_hub_sample: Next connection retry in 30 seconds
+[00:00:21.538,879] <dbg> azure_iot_hub: iot_hub_state_set: State transition: STATE_CONNECTING --> STATE_CONNECTED
+[00:00:21.538,879] <dbg> azure_iot_hub: on_connack: MQTT mqtt_client connected
+[00:00:21.542,694] <dbg> azure_iot_hub: topic_subscribe: Successfully subscribed to default topics
+[00:00:21.542,724] <inf> azure_iot_hub_sample: AZURE_IOT_HUB_EVT_CONNECTED
+[00:00:21.783,050] <inf> azure_iot_hub_sample: AZURE_IOT_HUB_EVT_READY
+[00:00:21.783,142] <dbg> azure_iot_hub: request_id_create_and_get: Request ID not specified, using "217"
+[00:00:21.783,905] <inf> azure_iot_hub_sample: Sending event:{"temperature":25.3,"timestamp":21783}
+[00:00:21.786,132] <inf> azure_iot_hub_sample: Event was successfully sent
+[00:00:21.786,132] <inf> azure_iot_hub_sample: Next event will be sent in 20 seconds
 
-If a new telemetry interval is set in the device twin, the console output is like this:
-
-.. code-block:: console
-
-	<inf> azure_iot_hub_sample: AZURE_IOT_HUB_EVT_TWIN_DESIRED_RECEIVED
-	<inf> azure_iot_hub_sample: New telemetry interval has been applied: 60
-	<inf> azure_iot_hub_sample: AZURE_IOT_HUB_EVT_TWIN_RESULT_SUCCESS, ID: 42740
-	<inf> azure_iot_hub_sample: Sending event:
-	<inf> azure_iot_hub_sample: {"temperature":25.5,"timestamp":47585}
-	<inf> azure_iot_hub_sample: Event was successfully sent
-	<inf> azure_iot_hub_sample: Next event will be sent in 60 seconds
 
 
 Dependencies
@@ -165,12 +176,5 @@ Dependencies
 This sample uses the following |NCS| libraries and drivers:
 
 * :ref:`lib_azure_iot_hub`
-* :ref:`lte_lc_readme`
 
-It uses the following `sdk-nrfxlib`_ library:
 
-* :ref:`nrfxlib:nrf_modem`
-
-In addition, it uses the following secure firmware component:
-
-* :ref:`Trusted Firmware-M <ug_tfm>`
