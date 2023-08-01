@@ -178,7 +178,7 @@ This sample uses the following |NCS| libraries and drivers:
 * :ref:`lib_azure_iot_hub`
 
 
-Note: if you get the errorcode -3b00 when you try to connect your Azure IoT Hub , please modify the file as following:
+Note: 1. if you get the errorcode -3b00 when you try to connect your Azure IoT Hub , please modify the file as following:
       C:\NCS_SDK\v2.4.0\nrf\subsys\nrf_security\Kconfig.legacy
 
 config MBEDTLS_MPI_MAX_SIZE
@@ -186,4 +186,327 @@ config MBEDTLS_MPI_MAX_SIZE
 	default 256 if CRYPTOCELL_CC310_USABLE || !CRYPTOCELL_USABLE
 	default 1024 if CRYPTOCELL_CC312_USABLE
 	# default 384 if CRYPTOCELL_CC312_USABLE
+
+
+
+      2. the library default only support mutual TLS authentication, if you want to support one-way authentication, please modify the file as following:
+         C:\NCS_SDK\v2.4.0\nrf\subsys\net\lib\azure_iot_hub\src\azure_iot_hub.c
+
+#define MQTT_TEST_USERNAME		"AquaHub2.azure-devices.net/aquasensing_firmware_test"
+#define MQTT_TEST_PASSWORD		"SharedAccessSignature sr=AquaHub2.azure-devices.net%2Fdevices%2Faquasensing_firmware_test&sig=JS1dJhOQtR3WREdhvPQABQ4Z%2FRIAyG2Hv2H7svdIq7Y%3D&se=2465357437"
+int azure_iot_hub_connect(const struct azure_iot_hub_config *config)
+{
+	int err;
+	char user_name_buf[CONFIG_AZURE_IOT_HUB_USER_NAME_BUF_SIZE];
+	size_t user_name_len;
+	az_span hostname_span;
+	az_span device_id_span;
+	struct mqtt_helper_conn_params conn_params = {
+		.hostname.ptr = config ? config->hostname.ptr : NULL,
+		.hostname.size = config ? config->hostname.size : 0,
+		.device_id.ptr = config ? config->device_id.ptr : NULL,
+		.device_id.size = config ? config->device_id.size : 0,
+		.user_name = {
+			.ptr = user_name_buf,
+		},
+	};
+	struct mqtt_helper_cfg cfg = {
+		.cb = {
+			.on_connack = on_connack,
+			.on_disconnect = on_disconnect,
+			.on_publish = on_publish,
+			.on_puback = on_puback,
+			.on_suback = on_suback,
+			.on_pingresp = on_pingresp,
+			.on_error = on_error,
+		},
+	};
+	struct azure_iot_hub_evt evt = {
+		evt.type = AZURE_IOT_HUB_EVT_CONNECTING,
+	};
+
+	if (iot_hub_state_verify(STATE_CONNECTING)) {
+		LOG_WRN("Azure IoT Hub connection establishment in progress");
+		return -EINPROGRESS;
+	}  else if (iot_hub_state_verify(STATE_CONNECTED)) {
+		LOG_WRN("Azure IoT Hub is already connected");
+		return -EALREADY;
+	} else if (!iot_hub_state_verify(STATE_DISCONNECTED)) {
+		LOG_WRN("Azure IoT Hub is not in initialized and disconnected state");
+		return -ENOENT;
+	}
+
+	/* Use static IP if that is configured */
+	if (sizeof(CONFIG_MQTT_HELPER_STATIC_IP_ADDRESS) > 1) {
+		LOG_DBG("Using static IP address: %s", CONFIG_MQTT_HELPER_STATIC_IP_ADDRESS);
+
+		conn_params.hostname.ptr = CONFIG_MQTT_HELPER_STATIC_IP_ADDRESS;
+		conn_params.hostname.size = sizeof(CONFIG_MQTT_HELPER_STATIC_IP_ADDRESS) - 1;
+	} else if ((conn_params.hostname.size == 0) && !IS_ENABLED(CONFIG_AZURE_IOT_HUB_DPS)) {
+		/* Set hostname to Kconfig value if it was not provided and DPS is not enabled. */
+		LOG_DBG("No hostname provided, using Kconfig value: %s",
+			CONFIG_AZURE_IOT_HUB_HOSTNAME);
+
+		conn_params.hostname.ptr = CONFIG_AZURE_IOT_HUB_HOSTNAME;
+		conn_params.hostname.size = sizeof(CONFIG_AZURE_IOT_HUB_HOSTNAME) - 1;
+	}
+
+	/* Set device ID to Kconfig value if it was not provided and DPS is not enabled. */
+	if ((conn_params.device_id.size == 0) && !IS_ENABLED(CONFIG_AZURE_IOT_HUB_DPS)) {
+		LOG_DBG("No device ID provided, using Kconfig value: %s",
+			CONFIG_AZURE_IOT_HUB_DEVICE_ID);
+
+		conn_params.device_id.ptr = CONFIG_AZURE_IOT_HUB_DEVICE_ID;
+		conn_params.device_id.size = sizeof(CONFIG_AZURE_IOT_HUB_DEVICE_ID) - 1;
+	}
+	conn_params.user_name.ptr = MQTT_TEST_USERNAME;
+	conn_params.user_name.size = sizeof(MQTT_TEST_USERNAME) - 1;
+
+	iot_hub_state_set(STATE_CONNECTING);
+
+	/* Notify the application that the library is currently connecting to the IoT hub. */
+	azure_iot_hub_notify_event(&evt);
+
+#if IS_ENABLED(CONFIG_AZURE_IOT_HUB_DPS)
+	if (config && config->use_dps) {
+		struct azure_iot_hub_dps_config dps_cfg = {
+			.handler = dps_handler,
+			.reg_id.ptr = conn_params.device_id.ptr,
+			.reg_id.size = conn_params.device_id.size,
+			.id_scope = {
+				.ptr = CONFIG_AZURE_IOT_HUB_DPS_ID_SCOPE,
+				.size = sizeof(CONFIG_AZURE_IOT_HUB_DPS_ID_SCOPE) - 1,
+			},
+		};
+		struct azure_iot_hub_buf hostname = {
+			.ptr = conn_params.hostname.ptr,
+			.size = conn_params.hostname.size,
+		};
+		struct azure_iot_hub_buf device_id = {
+			.ptr = conn_params.device_id.ptr,
+			.size = conn_params.device_id.size,
+		};
+
+		LOG_DBG("Starting DPS, timeout is %d seconds",
+			CONFIG_AZURE_IOT_HUB_DPS_TIMEOUT_SEC);
+
+		err = azure_iot_hub_dps_init(&dps_cfg);
+		if (err) {
+			LOG_ERR("azure_iot_hub_dps_init failed, error: %d", err);
+			goto exit;
+		}
+
+		err = azure_iot_hub_dps_start();
+		switch (err) {
+		case 0:
+			err = k_sem_take(&dps_sem, K_SECONDS(CONFIG_AZURE_IOT_HUB_DPS_TIMEOUT_SEC));
+			if (err != 0) {
+				LOG_ERR("DPS timed out, connection attempt terminated");
+				err = -ETIMEDOUT;
+				goto exit;
+			}
+
+			break;
+		case -EALREADY:
+			LOG_DBG("Already assigned to an IoT hub, skipping DPS");
+			break;
+		default:
+			LOG_ERR("azure_iot_hub_dps_start failed, error: %d", err);
+			goto exit;
+		}
+
+		err = azure_iot_hub_dps_hostname_get(&hostname);
+		if (err) {
+			LOG_ERR("Failed to get the stored hostname from DPS, error: %d", err);
+			err = -EFAULT;
+			goto exit;
+		}
+
+		conn_params.hostname.ptr = hostname.ptr;
+		conn_params.hostname.size = hostname.size;
+
+		LOG_DBG("Using the assigned hub (size: %d): %s",
+			conn_params.hostname.size, conn_params.hostname.ptr);
+
+		err = azure_iot_hub_dps_device_id_get(&device_id);
+		if (err) {
+			LOG_ERR("Failed to get the stored device ID from DPS, error: %d", err);
+			err = -EFAULT;
+			goto exit;
+		}
+
+		conn_params.device_id.ptr = device_id.ptr;
+		conn_params.device_id.size = device_id.size;
+
+		LOG_DBG("Using the assigned device ID: %.*s",
+			conn_params.device_id.size,
+			conn_params.device_id.ptr);
+	}
+
+#endif /* IS_ENABLED(CONFIG_AZURE_IOT_HUB_DPS) */
+
+	err = mqtt_helper_init(&cfg);
+	if (err) {
+		LOG_ERR("mqtt_helper_init failed, error: %d", err);
+		err = -EFAULT;
+		goto exit;
+	}
+
+	hostname_span = az_span_create(conn_params.hostname.ptr, conn_params.hostname.size);
+	device_id_span = az_span_create(conn_params.device_id.ptr, conn_params.device_id.size);
+
+	/* Initialize Azure SDK client instance. */
+	err = az_iot_hub_client_init(
+		&iot_hub_client,
+		hostname_span,
+		device_id_span,
+		NULL);
+	if (az_result_failed(err)) {
+		LOG_ERR("Failed to initialize IoT Hub mqtt_client, result code: %d", err);
+		err = -EFAULT;
+		goto exit;
+	}
+
+#if 0
+	err = az_iot_hub_client_get_user_name(&iot_hub_client,
+					      user_name_buf,
+					      sizeof(user_name_buf),
+					      &user_name_len);
+	if (az_result_failed(err)) {
+		LOG_ERR("Failed to get user name, az error: 0x%08x", err);
+		err = -EFAULT;
+		goto exit;
+	}
+
+	conn_params.user_name.size = user_name_len;
+
+	LOG_DBG("User name: %.*s", conn_params.user_name.size, conn_params.user_name.ptr);
+	LOG_DBG("User name buffer size is %d, actual user name size is: %d",
+		sizeof(user_name_buf), user_name_len);
+#else
+	conn_params.password.ptr = MQTT_TEST_PASSWORD;
+	conn_params.password.size = sizeof(MQTT_TEST_PASSWORD) - 1;
+
+#endif
+
+	err = mqtt_helper_connect(&conn_params);
+	if (err) {
+		LOG_ERR("mqtt_helper_connect failed, error: %d", err);
+		goto exit;
+	}
+
+	return 0;
+
+exit:
+	iot_hub_state_set(STATE_DISCONNECTED);
+	return err;
+}
+
+
+            C:\NCS_SDK\v2.4.0\nrf\subsys\net\lib\mqtt_helper\mqtt_helper.c
+static int client_connect(struct mqtt_helper_conn_params *conn_params)
+{
+	int err;
+	struct mqtt_utf8 user_name = {
+		.utf8 = conn_params->user_name.ptr,
+		.size = conn_params->user_name.size,
+	};
+	
+	struct mqtt_utf8 password = {
+		.utf8 = conn_params->password.ptr,
+		.size = conn_params->password.size,
+	};
+
+	mqtt_client_init(&mqtt_client);
+
+	err = broker_init(&broker, conn_params);
+	if (err) {
+		return err;
+	}
+
+	mqtt_client.broker	        = &broker;
+	mqtt_client.evt_cb	        = mqtt_evt_handler;
+	mqtt_client.client_id.utf8      = conn_params->device_id.ptr;
+	mqtt_client.client_id.size      = conn_params->device_id.size;
+	// mqtt_client.password	        = NULL;
+	mqtt_client.password	        = conn_params->password.size > 0 ? &password : NULL;
+
+	mqtt_client.protocol_version    = MQTT_VERSION_3_1_1;
+	mqtt_client.rx_buf	        = rx_buffer;
+	mqtt_client.rx_buf_size	        = sizeof(rx_buffer);
+	mqtt_client.tx_buf	        = tx_buffer;
+	mqtt_client.tx_buf_size	        = sizeof(tx_buffer);
+#if defined(CONFIG_MQTT_LIB_TLS)
+	mqtt_client.transport.type      = MQTT_TRANSPORT_SECURE;
+#else
+	mqtt_client.transport.type	= MQTT_TRANSPORT_NON_SECURE;
+#endif /* CONFIG_MQTT_LIB_TLS */
+	mqtt_client.user_name	        = conn_params->user_name.size > 0 ? &user_name : NULL;
+	
+
+#if defined(CONFIG_MQTT_LIB_TLS)
+	struct mqtt_sec_config *tls_cfg = &(mqtt_client.transport).tls.config;
+
+	sec_tag_t sec_tag_list[] = {
+		CONFIG_MQTT_HELPER_SEC_TAG,
+#if CONFIG_MQTT_HELPER_SECONDARY_SEC_TAG > -1
+		CONFIG_MQTT_HELPER_SECONDARY_SEC_TAG,
+#endif
+	};
+
+	tls_cfg->peer_verify	        = TLS_PEER_VERIFY_REQUIRED;
+	tls_cfg->cipher_count	        = 0;
+	tls_cfg->cipher_list	        = NULL; /* Use default */
+	tls_cfg->sec_tag_count	        = ARRAY_SIZE(sec_tag_list);
+	tls_cfg->sec_tag_list	        = sec_tag_list;
+	tls_cfg->session_cache	        = TLS_SESSION_CACHE_DISABLED;
+	tls_cfg->hostname	        = conn_params->hostname.ptr;
+	tls_cfg->set_native_tls		= IS_ENABLED(CONFIG_MQTT_HELPER_NATIVE_TLS);
+
+#if defined(CONFIG_MQTT_HELPER_PROVISION_CERTIFICATES)
+	err = certificates_provision();
+	if (err) {
+		LOG_ERR("Could not provision certificates, error: %d", err);
+		return err;
+	}
+#endif /* defined(CONFIG_MQTT_HELPER_PROVISION_CERTIFICATES) */
+#endif /* defined(CONFIG_MQTT_LIB_TLS) */
+
+	mqtt_state_set(MQTT_STATE_TRANSPORT_CONNECTING);
+
+	err = mqtt_connect(&mqtt_client);
+	if (err) {
+		LOG_ERR("mqtt_connect, error: %d", err);
+		return err;
+	}
+
+	mqtt_state_set(MQTT_STATE_TRANSPORT_CONNECTED);
+
+	mqtt_state_set(MQTT_STATE_CONNECTING);
+
+	if (IS_ENABLED(CONFIG_MQTT_HELPER_SEND_TIMEOUT)) {
+		struct timeval timeout = {
+			.tv_sec = CONFIG_MQTT_HELPER_SEND_TIMEOUT_SEC
+		};
+
+#if defined(CONFIG_MQTT_LIB_TLS)
+		int sock  = mqtt_client.transport.tls.sock;
+#else
+		int sock = mqtt_client.transport.tcp.sock;
+#endif /* CONFIG_MQTT_LIB_TLS */
+
+		err = setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+		if (err == -1) {
+			LOG_WRN("Failed to set timeout, errno: %d", errno);
+
+			/* Don't propagate this as an error. */
+			err = 0;
+		} else {
+			LOG_DBG("Using send socket timeout of %d seconds",
+				CONFIG_MQTT_HELPER_SEND_TIMEOUT_SEC);
+		}
+	}
+
+	return 0;
+}
 

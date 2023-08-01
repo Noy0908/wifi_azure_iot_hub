@@ -235,6 +235,7 @@ static void azure_event_handler(struct azure_iot_hub_evt *const evt)
 		break;
 	case AZURE_IOT_HUB_EVT_DISCONNECTED:
 		LOG_INF("AZURE_IOT_HUB_EVT_DISCONNECTED");
+		(void)k_work_reschedule(&connect_work, K_SECONDS(5));
 		break;
 	case AZURE_IOT_HUB_EVT_READY:
 		LOG_INF("AZURE_IOT_HUB_EVT_READY");
@@ -299,9 +300,7 @@ static void send_event(struct k_work *work)
 		.qos = MQTT_QOS_0_AT_MOST_ONCE,
 	};
 
-	len = snprintk(buf, sizeof(buf),
-		       "{\"temperature\":%d.%d,\"timestamp\":%d}",
-		       25, k_uptime_get_32() % 10, k_uptime_get_32());
+	len = snprintk(buf, sizeof(buf), "{\"Name\":%s,\"Satus\":%s}","Ahmad", "fall_to_walk");
 	if ((len < 0) || (len > sizeof(buf))) {
 		LOG_ERR("Failed to populate event buffer");
 		goto exit;
@@ -481,8 +480,8 @@ static void modem_configure(void)
 
 static void work_init(void)
 {
-	k_work_init(&method_data.work, direct_method_handler);
-	k_work_init(&twin_report_work, twin_report_work_fn);
+	// k_work_init(&method_data.work, direct_method_handler);
+	// k_work_init(&twin_report_work, twin_report_work_fn);
 	k_work_init_delayable(&send_event_work, send_event);
 	k_work_queue_start(&application_work_q, application_stack_area,
 		       K_THREAD_STACK_SIZEOF(application_stack_area),
