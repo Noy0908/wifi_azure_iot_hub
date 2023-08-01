@@ -235,6 +235,7 @@ static void azure_event_handler(struct azure_iot_hub_evt *const evt)
 		break;
 	case AZURE_IOT_HUB_EVT_DISCONNECTED:
 		LOG_INF("AZURE_IOT_HUB_EVT_DISCONNECTED");
+		(void)k_work_reschedule(&connect_work, K_SECONDS(5));
 		break;
 	case AZURE_IOT_HUB_EVT_READY:
 		LOG_INF("AZURE_IOT_HUB_EVT_READY");
