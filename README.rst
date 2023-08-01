@@ -178,3 +178,12 @@ This sample uses the following |NCS| libraries and drivers:
 * :ref:`lib_azure_iot_hub`
 
 
+Note: if you get the errorcode -3b00 when you try to connect your Azure IoT Hub , please modify the file as following:
+      C:\NCS_SDK\v2.4.0\nrf\subsys\nrf_security\Kconfig.legacy
+
+config MBEDTLS_MPI_MAX_SIZE
+	int
+	default 256 if CRYPTOCELL_CC310_USABLE || !CRYPTOCELL_USABLE
+	default 1024 if CRYPTOCELL_CC312_USABLE
+	# default 384 if CRYPTOCELL_CC312_USABLE
+
