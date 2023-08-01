@@ -191,7 +191,28 @@ config MBEDTLS_MPI_MAX_SIZE
 
 
 **Note: The library default only support mutual TLS authentication, if you want to support one-way authentication, please modify the files as following:**
-         **C:\NCS_SDK\v2.4.0\nrf\subsys\net\lib\azure_iot_hub\src\azure_iot_hub.c**
+
+​			**C:\NCS_SDK\v2.4.0\nrf\include\net\mqtt_helper.h**
+
+```
+struct mqtt_helper_conn_params {
+
+  /* The hostname must be null-terminated. */
+
+  struct mqtt_helper_buf hostname;
+
+  struct mqtt_helper_buf device_id;
+
+  struct mqtt_helper_buf user_name;
+
+  struct mqtt_helper_buf password;    
+
+};
+```
+
+
+
+​         **C:\NCS_SDK\v2.4.0\nrf\subsys\net\lib\azure_iot_hub\src\azure_iot_hub.c**
 
 ```
 #define MQTT_TEST_USERNAME		"AquaHub2.azure-devices.net/aquasensing_firmware_test"
